@@ -1,9 +1,11 @@
 package com.ukbuild.refresh144
 
 import android.app.Activity
+import android.app.AppOpsManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Process
 import android.provider.Settings
 import android.view.Gravity
 import android.widget.Button
@@ -13,6 +15,7 @@ import android.widget.Toast
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
+    private var lastApplyDetail = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,8 +46,12 @@ class MainActivity : Activity() {
             text = "144Hz 설정 적용"
             setOnClickListener {
                 val r = RefreshSettings.apply(this@MainActivity)
-                Toast.makeText(this@MainActivity,
-                    "시스템: ${r.system}, Global: ${r.global}", Toast.LENGTH_LONG).show()
+                lastApplyDetail = r.detail
+                Toast.makeText(
+                    this@MainActivity,
+                    "System 쓰기: " + r.system + ", Global 쓰기: " + r.global,
+                    Toast.LENGTH_LONG
+                ).show()
                 updateStatus()
             }
         }
@@ -99,7 +106,7 @@ class MainActivity : Activity() {
             ).show()
             openContactsAppInfo(target)
         } catch (e: Exception) {
-            Toast.makeText(this, "변경 실패: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "변경 실패: " + e.message, Toast.LENGTH_LONG).show()
             openContactsAppInfo(target)
         }
     }
@@ -116,12 +123,32 @@ class MainActivity : Activity() {
     }
 
     private fun updateStatus() {
-        val write = Settings.System.canWrite(this)
+        val canWrite = Settings.System.canWrite(this)
+        val appOpsMode = try {
+            val appOps = getSystemService(APP_OPS_SERVICE) as AppOpsManager
+            appOps.checkOpNoThrow(
+                AppOpsManager.OPSTR_WRITE_SETTINGS,
+                Process.myUid(),
+                packageName
+            )
+        } catch (e: Exception) {
+            -1
+        }
+        val appOpsText = when (appOpsMode) {
+            AppOpsManager.MODE_ALLOWED -> "허용"
+            AppOpsManager.MODE_IGNORED -> "무시"
+            AppOpsManager.MODE_ERRORED -> "거부"
+            AppOpsManager.MODE_DEFAULT -> "기본값"
+            else -> "확인 불가(" + appOpsMode + ")"
+        }
         val secure = checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
-        status.text = "WRITE_SETTINGS: ${if (write) "허용" else "미허용"}\n" +
-            "WRITE_SECURE_SETTINGS: ${if (secure) "허용" else "미허용"}\n\n" +
-            RefreshSettings.current(this) +
+
+        status.text = "WRITE_SETTINGS canWrite: " + canWrite +
+            "\nWRITE_SETTINGS AppOps: " + appOpsText +
+            "\nWRITE_SECURE_SETTINGS: " + (if (secure) "허용" else "미허용") +
+            "\n\n" + RefreshSettings.current(this) +
+            (if (lastApplyDetail.isNotBlank()) "\n\n최근 적용 결과:\n" + lastApplyDetail else "") +
             "\n\n부팅 완료 후 144Hz 설정을 자동 적용합니다.\n" +
             "전화/메시지 버튼은 순정 권한으로 직접 변경이 차단되면 앱 정보 화면을 엽니다."
     }
